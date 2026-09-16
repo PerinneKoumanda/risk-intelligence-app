@@ -3,6 +3,75 @@
 import { useMemo, useRef, useState } from "react";
 import { cases as sampleCases, RiskCase, riskTier, calculateRiskScore, defaultWeights } from "../lib/risk-engine";
 
+type PresetKey = "finance" | "fiveCs" | "education";
+
+type Preset = {
+  key: PresetKey;
+  label: string;
+  eyebrow: string;
+  title: string;
+  entityLabel: string;
+  caseTypeLabel: string;
+  exposureLabel: string;
+  exposureShort: string;
+  factorLabels: { financial: string; behavior: string; compliance: string; operational: string };
+  csvNote: string;
+};
+
+const PRESETS: Record<PresetKey, Preset> = {
+  finance: {
+    key: "finance",
+    label: "Finance — Credit Risk",
+    eyebrow: "RISK INTELLIGENCE",
+    title: "Risk-Based Case Prioritization",
+    entityLabel: "Client",
+    caseTypeLabel: "Case Type",
+    exposureLabel: "Exposure (USD)",
+    exposureShort: "Exposure",
+    factorLabels: {
+      financial: "Financial Risk",
+      behavior: "Behavioral Risk",
+      compliance: "Compliance Risk",
+      operational: "Operational Risk"
+    },
+    csvNote: "financial = Financial Risk · behavior = Behavioral Risk · compliance = Compliance Risk · operational = Operational Risk"
+  },
+  fiveCs: {
+    key: "fiveCs",
+    label: "Finance — 5 Cs of Credit",
+    eyebrow: "CREDIT ANALYSIS",
+    title: "5 Cs of Credit Risk Scoring",
+    entityLabel: "Borrower",
+    caseTypeLabel: "Facility Type",
+    exposureLabel: "Loan Exposure (USD)",
+    exposureShort: "Loan Exposure",
+    factorLabels: {
+      financial: "Capacity",
+      behavior: "Character",
+      compliance: "Conditions",
+      operational: "Capital"
+    },
+    csvNote: "financial = Capacity · behavior = Character · compliance = Conditions · operational = Capital"
+  },
+  education: {
+    key: "education",
+    label: "Education — Student Risk",
+    eyebrow: "STUDENT SUCCESS",
+    title: "Student Risk & Intervention Dashboard",
+    entityLabel: "Student",
+    caseTypeLabel: "Program",
+    exposureLabel: "Financial Aid at Risk (USD)",
+    exposureShort: "Aid at Risk",
+    factorLabels: {
+      financial: "Academic Performance",
+      behavior: "Attendance & Engagement",
+      compliance: "Fee/Tuition Compliance",
+      operational: "Extracurricular Engagement"
+    },
+    csvNote: "financial = Academic Performance · behavior = Attendance & Engagement · compliance = Fee/Tuition Compliance · operational = Extracurricular Engagement"
+  }
+};
+
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -45,9 +114,13 @@ function parseCsv(text: string): RiskCase[] {
 }
 
 export default function Home() {
+  const [presetKey, setPresetKey] = useState<PresetKey>("finance");
+  const preset = PRESETS[presetKey];
+
   const [cases, setCases] = useState<RiskCase[]>(sampleCases);
   const [usingUpload, setUsingUpload] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showCsvHelp, setShowCsvHelp] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedTier, setSelectedTier] = useState<"All" | "High" | "Medium" | "Low">("All");
@@ -112,10 +185,19 @@ export default function Home() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">RISK INTELLIGENCE</p>
-          <h1>Risk-Based Case Prioritization</h1>
+          <p className="eyebrow">{preset.eyebrow}</p>
+          <h1>{preset.title}</h1>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <select
+            value={presetKey}
+            onChange={e => setPresetKey(e.target.value as PresetKey)}
+            style={{ minWidth: 190 }}
+          >
+            {Object.values(PRESETS).map(p => (
+              <option key={p.key} value={p.key}>{p.label}</option>
+            ))}
+          </select>
           <input
             ref={fileInputRef}
             type="file"
@@ -128,15 +210,20 @@ export default function Home() {
             }}
           />
           <button className="secondary" onClick={() => fileInputRef.current?.click()}>
-            Upload Case File (CSV)
+            Upload File (CSV)
           </button>
           <button className="primary" onClick={() => setShowAssessment(true)}>+ New Assessment</button>
         </div>
       </header>
 
+      <div className="panel" style={{ padding: "10px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <span className="muted" style={{ fontSize: 12 }}>{preset.csvNote}</span>
+        <button className="secondary" onClick={() => setShowCsvHelp(true)}>What columns does my CSV need?</button>
+      </div>
+
       {usingUpload && (
         <div className="panel" style={{ padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span className="muted">Showing {cases.length} case(s) from your uploaded file — scores calculated automatically.</span>
+          <span className="muted">Showing {cases.length} record(s) from your uploaded file — scores calculated automatically.</span>
           <button className="secondary" onClick={resetToSample}>Reset to sample data</button>
         </div>
       )}
@@ -152,14 +239,14 @@ export default function Home() {
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search case, client or case type..."
+            placeholder={`Search ${preset.entityLabel.toLowerCase()}, ID or ${preset.caseTypeLabel.toLowerCase()}...`}
           />
         </div>
         <label className="sortControl">
           Sort by
           <select value={sort} onChange={e => setSort(e.target.value as "score" | "exposure")}>
             <option value="score">Risk Score</option>
-            <option value="exposure">Exposure</option>
+            <option value="exposure">{preset.exposureShort}</option>
           </select>
         </label>
       </section>
@@ -168,20 +255,20 @@ export default function Home() {
         <div className="panel queue">
           <div className="panelHead">
             <div>
-              <p className="muted">CASE QUEUE</p>
-              <h2>Prioritized Cases</h2>
+              <p className="muted">{preset.entityLabel.toUpperCase()} QUEUE</p>
+              <h2>Prioritized Records</h2>
             </div>
-            <span className="countPill">{filtered.length} cases</span>
+            <span className="countPill">{filtered.length} records</span>
           </div>
 
           <div className="tableWrap">
             <table>
               <thead>
                 <tr>
-                  <th>Case ID</th>
-                  <th>Client</th>
-                  <th>Case Type</th>
-                  <th>Exposure</th>
+                  <th>ID</th>
+                  <th>{preset.entityLabel}</th>
+                  <th>{preset.caseTypeLabel}</th>
+                  <th>{preset.exposureShort}</th>
                   <th>Score</th>
                   <th>Tier</th>
                 </tr>
@@ -204,8 +291,8 @@ export default function Home() {
 
         <div className="rightCol">
           <div className="metrics">
-            <Metric title="Total Exposure · High Risk" value={formatMoney(highExposure)} sub="Across current high-risk queue" />
-            <Metric title="Number of High-Risk Cases" value={String(counts.High)} sub="Require priority review" />
+            <Metric title={`Total ${preset.exposureShort} · High Risk`} value={formatMoney(highExposure)} sub="Across current high-risk queue" />
+            <Metric title="Number of High-Risk Records" value={String(counts.High)} sub="Require priority review" />
           </div>
 
           <div className="lower">
@@ -213,7 +300,7 @@ export default function Home() {
               <div className="panelHead">
                 <div>
                   <p className="muted">PORTFOLIO MIX</p>
-                  <h2>Cases by Risk Tier</h2>
+                  <h2>Records by Risk Tier</h2>
                 </div>
               </div>
               <div className="donutArea">
@@ -225,7 +312,7 @@ export default function Home() {
                 >
                   <div className="donutInner">
                     <strong>{total}</strong>
-                    <span>Total cases</span>
+                    <span>Total records</span>
                   </div>
                 </div>
                 <div className="legend">
@@ -262,11 +349,44 @@ export default function Home() {
       </section>
 
       <footer>
-        <span>Risk Intelligence · v1.1</span>
+        <span>{preset.label} · v2.0</span>
         <span>Configurable scoring engine · Built for GitHub</span>
       </footer>
 
-      {showAssessment && <AssessmentModal onClose={() => setShowAssessment(false)} />}
+      {showAssessment && (
+        <AssessmentModal preset={preset} onClose={() => setShowAssessment(false)} />
+      )}
+
+      {showCsvHelp && (
+        <div className="modalBackdrop" onClick={() => setShowCsvHelp(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modalHead">
+              <div>
+                <p className="muted">CSV FORMAT</p>
+                <h2>Required columns</h2>
+              </div>
+              <button className="close" onClick={() => setShowCsvHelp(false)}>×</button>
+            </div>
+            <div style={{ padding: 22 }}>
+              <p className="mono" style={{ fontSize: 12, marginBottom: 14 }}>
+                id,client,caseType,exposure,financial,behavior,compliance,operational
+              </p>
+              <p style={{ marginBottom: 10 }}>
+                The column names in your file never change — they always stay
+                <span className="mono"> financial / behavior / compliance / operational</span>.
+                Only what they <em>mean</em> changes with the preset you pick above:
+              </p>
+              <p className="muted" style={{ fontSize: 13 }}>{preset.csvNote}</p>
+              <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>
+                <span className="mono">exposure</span> is a dollar amount — currently shown as &ldquo;{preset.exposureLabel}&rdquo;.
+              </p>
+            </div>
+            <div className="modalActions">
+              <button className="primary" onClick={() => setShowCsvHelp(false)}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
@@ -281,7 +401,7 @@ function Metric({ title, value, sub }: { title: string; value: string; sub: stri
   );
 }
 
-function AssessmentModal({ onClose }: { onClose: () => void }) {
+function AssessmentModal({ preset, onClose }: { preset: Preset; onClose: () => void }) {
   const [exposure, setExposure] = useState(500000);
   const [financial, setFinancial] = useState(3);
   const [behavior, setBehavior] = useState(2);
@@ -306,11 +426,11 @@ function AssessmentModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="formGrid">
-          <label>Exposure (USD)<input type="number" value={exposure} onChange={e => setExposure(Number(e.target.value))}/></label>
-          <ScoreInput label="Financial Risk" value={financial} setValue={setFinancial}/>
-          <ScoreInput label="Behavioral Risk" value={behavior} setValue={setBehavior}/>
-          <ScoreInput label="Compliance Risk" value={compliance} setValue={setCompliance}/>
-          <ScoreInput label="Operational Risk" value={operational} setValue={setOperational}/>
+          <label>{preset.exposureLabel}<input type="number" value={exposure} onChange={e => setExposure(Number(e.target.value))}/></label>
+          <ScoreInput label={preset.factorLabels.financial} value={financial} setValue={setFinancial}/>
+          <ScoreInput label={preset.factorLabels.behavior} value={behavior} setValue={setBehavior}/>
+          <ScoreInput label={preset.factorLabels.compliance} value={compliance} setValue={setCompliance}/>
+          <ScoreInput label={preset.factorLabels.operational} value={operational} setValue={setOperational}/>
         </div>
 
         <div className="scorePreview">
