@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { cases, RiskCase, riskTier } from "../lib/risk-engine";
+import { useMemo, useRef, useState } from "react";
+import { cases as sampleCases, RiskCase, riskTier, calculateRiskScore, defaultWeights } from "../lib/risk-engine";
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -11,11 +11,78 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
+function parseCsv(text: string): RiskCase[] {
+  const lines = text.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const rows = lines.slice(1);
+
+  return rows.map((line, i) => {
+    const values = line.split(",").map(v => v.trim());
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => (row[h] = values[idx] ?? ""));
+
+    const exposure = Number(row.exposure) || 0;
+    const factors = {
+      financial: Number(row.financial) || 0,
+      behavior: Number(row.behavior) || 0,
+      compliance: Number(row.compliance) || 0,
+      operational: Number(row.operational) || 0
+    };
+    const score = calculateRiskScore(factors, defaultWeights);
+    const tier = riskTier(score);
+
+    return {
+      id: row.id || `ROW-${i + 1}`,
+      client: row.client || "Unnamed",
+      caseType: row.casetype || row.case_type || "General",
+      exposure,
+      score,
+      tier
+    };
+  });
+}
+
 export default function Home() {
+  const [cases, setCases] = useState<RiskCase[]>(sampleCases);
+  const [usingUpload, setUsingUpload] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [selectedTier, setSelectedTier] = useState<"All" | "High" | "Medium" | "Low">("All");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"score" | "exposure">("score");
   const [showAssessment, setShowAssessment] = useState(false);
+
+  function handleFile(file: File) {
+    setUploadError(null);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = String(reader.result || "");
+        const parsed = parseCsv(text);
+        if (!parsed.length) {
+          setUploadError("No rows found. Check that your CSV has a header row and at least one data row.");
+          return;
+        }
+        setCases(parsed);
+        setUsingUpload(true);
+        setSelectedTier("All");
+      } catch (e) {
+        setUploadError("Couldn't read that file. Make sure it's a plain CSV.");
+      }
+    };
+    reader.onerror = () => setUploadError("Couldn't read that file. Make sure it's a plain CSV.");
+    reader.readAsText(file);
+  }
+
+  function resetToSample() {
+    setCases(sampleCases);
+    setUsingUpload(false);
+    setUploadError(null);
+    setSelectedTier("All");
+  }
 
   const filtered = useMemo(() => {
     return [...cases]
@@ -24,7 +91,7 @@ export default function Home() {
         `${c.id} ${c.client} ${c.caseType}`.toLowerCase().includes(query.toLowerCase())
       )
       .sort((a, b) => b[sort] - a[sort]);
-  }, [selectedTier, query, sort]);
+  }, [cases, selectedTier, query, sort]);
 
   const highExposure = cases
     .filter(c => c.tier === "High")
@@ -36,7 +103,7 @@ export default function Home() {
     Low: cases.filter(c => c.tier === "Low").length
   };
 
-  const total = cases.length;
+  const total = cases.length || 1;
   const highPct = (counts.High / total) * 100;
   const mediumPct = (counts.Medium / total) * 100;
   const lowPct = (counts.Low / total) * 100;
@@ -48,8 +115,36 @@ export default function Home() {
           <p className="eyebrow">RISK INTELLIGENCE</p>
           <h1>Risk-Based Case Prioritization</h1>
         </div>
-        <button className="primary" onClick={() => setShowAssessment(true)}>+ New Assessment</button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            style={{ display: "none" }}
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file) handleFile(file);
+              e.target.value = "";
+            }}
+          />
+          <button className="secondary" onClick={() => fileInputRef.current?.click()}>
+            Upload Case File (CSV)
+          </button>
+          <button className="primary" onClick={() => setShowAssessment(true)}>+ New Assessment</button>
+        </div>
       </header>
+
+      {usingUpload && (
+        <div className="panel" style={{ padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span className="muted">Showing {cases.length} case(s) from your uploaded file — scores calculated automatically.</span>
+          <button className="secondary" onClick={resetToSample}>Reset to sample data</button>
+        </div>
+      )}
+      {uploadError && (
+        <div className="panel" style={{ padding: "12px 16px", marginBottom: 16, borderColor: "var(--red)", color: "#ff7272" }}>
+          {uploadError}
+        </div>
+      )}
 
       <section className="toolbar">
         <div className="searchWrap">
@@ -167,7 +262,7 @@ export default function Home() {
       </section>
 
       <footer>
-        <span>Risk Intelligence · v1.0</span>
+        <span>Risk Intelligence · v1.1</span>
         <span>Configurable scoring engine · Built for GitHub</span>
       </footer>
 
@@ -193,7 +288,10 @@ function AssessmentModal({ onClose }: { onClose: () => void }) {
   const [compliance, setCompliance] = useState(3);
   const [operational, setOperational] = useState(2);
 
-  const score = (financial * 0.35 + behavior * 0.2 + compliance * 0.3 + operational * 0.15);
+  const score = calculateRiskScore(
+    { financial, behavior, compliance, operational },
+    defaultWeights
+  );
   const tier = riskTier(score);
 
   return (
