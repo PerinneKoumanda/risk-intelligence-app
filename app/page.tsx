@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cases as sampleCases, RiskCase, riskTier, calculateRiskScore, defaultWeights } from "../lib/risk-engine";
 
 type PresetKey = "finance" | "fiveCs" | "education";
+
+type CsvField = { field: string; meaning: string };
 
 type Preset = {
   key: PresetKey;
@@ -15,14 +17,14 @@ type Preset = {
   exposureLabel: string;
   exposureShort: string;
   factorLabels: { financial: string; behavior: string; compliance: string; operational: string };
-  csvNote: string;
+  csvFields: CsvField[];
 };
 
 const PRESETS: Record<PresetKey, Preset> = {
   finance: {
     key: "finance",
     label: "Finance — Credit Risk",
-    eyebrow: "RISK INTELLIGENCE",
+    eyebrow: "Risk Intelligence Desk",
     title: "Risk-Based Case Prioritization",
     entityLabel: "Client",
     caseTypeLabel: "Case Type",
@@ -34,12 +36,17 @@ const PRESETS: Record<PresetKey, Preset> = {
       compliance: "Compliance Risk",
       operational: "Operational Risk"
     },
-    csvNote: "financial = Financial Risk · behavior = Behavioral Risk · compliance = Compliance Risk · operational = Operational Risk"
+    csvFields: [
+      { field: "financial", meaning: "Financial Risk" },
+      { field: "behavior", meaning: "Behavioral Risk" },
+      { field: "compliance", meaning: "Compliance Risk" },
+      { field: "operational", meaning: "Operational Risk" }
+    ]
   },
   fiveCs: {
     key: "fiveCs",
     label: "Finance — 5 Cs of Credit",
-    eyebrow: "CREDIT ANALYSIS",
+    eyebrow: "Teaching case",
     title: "5 Cs of Credit Risk Scoring",
     entityLabel: "Borrower",
     caseTypeLabel: "Facility Type",
@@ -51,12 +58,17 @@ const PRESETS: Record<PresetKey, Preset> = {
       compliance: "Conditions",
       operational: "Capital"
     },
-    csvNote: "financial = Capacity · behavior = Character · compliance = Conditions · operational = Capital"
+    csvFields: [
+      { field: "financial", meaning: "Capacity" },
+      { field: "behavior", meaning: "Character" },
+      { field: "compliance", meaning: "Conditions" },
+      { field: "operational", meaning: "Capital" }
+    ]
   },
   education: {
     key: "education",
     label: "Education — Student Risk",
-    eyebrow: "STUDENT SUCCESS",
+    eyebrow: "Advising snapshot",
     title: "Student Risk & Intervention Dashboard",
     entityLabel: "Student",
     caseTypeLabel: "Program",
@@ -68,7 +80,12 @@ const PRESETS: Record<PresetKey, Preset> = {
       compliance: "Fee/Tuition Compliance",
       operational: "Extracurricular Engagement"
     },
-    csvNote: "financial = Academic Performance · behavior = Attendance & Engagement · compliance = Fee/Tuition Compliance · operational = Extracurricular Engagement"
+    csvFields: [
+      { field: "financial", meaning: "Academic Performance" },
+      { field: "behavior", meaning: "Attendance & Engagement" },
+      { field: "compliance", meaning: "Fee/Tuition Compliance" },
+      { field: "operational", meaning: "Extracurricular Engagement" }
+    ]
   }
 };
 
@@ -116,6 +133,10 @@ function parseCsv(text: string): RiskCase[] {
 export default function Home() {
   const [presetKey, setPresetKey] = useState<PresetKey>("finance");
   const preset = PRESETS[presetKey];
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", presetKey);
+  }, [presetKey]);
 
   const [cases, setCases] = useState<RiskCase[]>(sampleCases);
   const [usingUpload, setUsingUpload] = useState(false);
@@ -216,8 +237,12 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="panel" style={{ padding: "10px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <span className="muted" style={{ fontSize: 12 }}>{preset.csvNote}</span>
+      <div className="panel" style={{ padding: "12px 16px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+        <div className="chipRow">
+          {preset.csvFields.map(f => (
+            <span key={f.field} className="chip"><b>{f.field}</b>{f.meaning}</span>
+          ))}
+        </div>
         <button className="secondary" onClick={() => setShowCsvHelp(true)}>What columns does my CSV need?</button>
       </div>
 
@@ -228,7 +253,7 @@ export default function Home() {
         </div>
       )}
       {uploadError && (
-        <div className="panel" style={{ padding: "12px 16px", marginBottom: 16, borderColor: "var(--red)", color: "#ff7272" }}>
+        <div className="panel" style={{ padding: "12px 16px", marginBottom: 16, borderColor: "var(--high)", color: "var(--high-text)" }}>
           {uploadError}
         </div>
       )}
@@ -255,8 +280,8 @@ export default function Home() {
         <div className="panel queue">
           <div className="panelHead">
             <div>
-              <p className="muted">{preset.entityLabel.toUpperCase()} QUEUE</p>
-              <h2>Prioritized Records</h2>
+              <p className="muted">{preset.entityLabel} queue</p>
+              <h2>Prioritized records</h2>
             </div>
             <span className="countPill">{filtered.length} records</span>
           </div>
@@ -279,8 +304,8 @@ export default function Home() {
                     <td className="mono">{c.id}</td>
                     <td>{c.client}</td>
                     <td>{c.caseType}</td>
-                    <td>{formatMoney(c.exposure)}</td>
-                    <td><strong>{c.score.toFixed(1)}</strong></td>
+                    <td className="mono">{formatMoney(c.exposure)}</td>
+                    <td className="mono"><strong>{c.score.toFixed(1)}</strong></td>
                     <td><span className={`badge ${c.tier.toLowerCase()}`}>{c.tier}</span></td>
                   </tr>
                 ))}
@@ -291,23 +316,23 @@ export default function Home() {
 
         <div className="rightCol">
           <div className="metrics">
-            <Metric title={`Total ${preset.exposureShort} · High Risk`} value={formatMoney(highExposure)} sub="Across current high-risk queue" />
-            <Metric title="Number of High-Risk Records" value={String(counts.High)} sub="Require priority review" />
+            <Metric title={`Total ${preset.exposureShort} at High Risk`} value={formatMoney(highExposure)} sub="Across current high-risk queue" />
+            <Metric title="High-Risk Record Count" value={String(counts.High)} sub="Require priority review" />
           </div>
 
           <div className="lower">
             <div className="panel chartPanel">
               <div className="panelHead">
                 <div>
-                  <p className="muted">PORTFOLIO MIX</p>
-                  <h2>Records by Risk Tier</h2>
+                  <p className="muted">Portfolio mix</p>
+                  <h2>Records by risk tier</h2>
                 </div>
               </div>
               <div className="donutArea">
                 <div
                   className="donut"
                   style={{
-                    background: `conic-gradient(#ef4444 0 ${highPct}%, #facc15 ${highPct}% ${highPct + mediumPct}%, #22c55e ${highPct + mediumPct}% 100%)`
+                    background: `conic-gradient(var(--high) 0 ${highPct}%, var(--medium) ${highPct}% ${highPct + mediumPct}%, var(--low) ${highPct + mediumPct}% 100%)`
                   }}
                 >
                   <div className="donutInner">
@@ -326,8 +351,8 @@ export default function Home() {
             <div className="panel filterPanel">
               <div className="panelHead">
                 <div>
-                  <p className="muted">QUICK FILTER</p>
-                  <h2>Filter by Tier</h2>
+                  <p className="muted">Quick filter</p>
+                  <h2>Filter by tier</h2>
                 </div>
               </div>
               <div className="filterGrid">
@@ -349,8 +374,8 @@ export default function Home() {
       </section>
 
       <footer>
-        <span>{preset.label} · v2.0</span>
-        <span>Configurable scoring engine · Built for GitHub</span>
+        <span>{preset.label}</span>
+        <span>Scores update automatically as you edit or upload data.</span>
       </footer>
 
       {showAssessment && (
@@ -362,7 +387,7 @@ export default function Home() {
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modalHead">
               <div>
-                <p className="muted">CSV FORMAT</p>
+                <p className="muted">CSV format</p>
                 <h2>Required columns</h2>
               </div>
               <button className="close" onClick={() => setShowCsvHelp(false)}>×</button>
@@ -372,13 +397,15 @@ export default function Home() {
                 id,client,caseType,exposure,financial,behavior,compliance,operational
               </p>
               <p style={{ marginBottom: 10 }}>
-                The column names in your file never change — they always stay
-                <span className="mono"> financial / behavior / compliance / operational</span>.
-                Only what they <em>mean</em> changes with the preset you pick above:
+                The column names in your file never change. Only what they mean changes with the preset you pick above:
               </p>
-              <p className="muted" style={{ fontSize: 13 }}>{preset.csvNote}</p>
-              <p className="muted" style={{ fontSize: 13, marginTop: 10 }}>
-                <span className="mono">exposure</span> is a dollar amount — currently shown as &ldquo;{preset.exposureLabel}&rdquo;.
+              <div className="chipRow">
+                {preset.csvFields.map(f => (
+                  <span key={f.field} className="chip"><b>{f.field}</b>{f.meaning}</span>
+                ))}
+              </div>
+              <p className="muted" style={{ fontSize: 13, marginTop: 14 }}>
+                <span className="mono">exposure</span> is a dollar amount, currently labeled &ldquo;{preset.exposureLabel}&rdquo;.
               </p>
             </div>
             <div className="modalActions">
@@ -419,8 +446,8 @@ function AssessmentModal({ preset, onClose }: { preset: Preset; onClose: () => v
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modalHead">
           <div>
-            <p className="muted">NEW ASSESSMENT</p>
-            <h2>Calculate Risk Score</h2>
+            <p className="muted">New assessment</p>
+            <h2>Calculate risk score</h2>
           </div>
           <button className="close" onClick={onClose}>×</button>
         </div>
