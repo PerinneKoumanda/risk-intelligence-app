@@ -89,6 +89,21 @@ const PRESETS: Record<PresetKey, Preset> = {
   }
 };
 
+const educationSampleCases: RiskCase[] = [
+  { id: "STU-2101", client: "Amara Njoroge", caseType: "Undergraduate", exposure: 180000, score: 4.6, tier: "High" },
+  { id: "STU-2102", client: "Brian Otieno", caseType: "Undergraduate", exposure: 120000, score: 4.2, tier: "High" },
+  { id: "STU-2103", client: "Chidinma Eze", caseType: "Graduate", exposure: 250000, score: 3.8, tier: "High" },
+  { id: "STU-2104", client: "David Kamau", caseType: "Undergraduate", exposure: 90000, score: 3.3, tier: "Medium" },
+  { id: "STU-2105", client: "Esther Wanjiru", caseType: "Exchange", exposure: 60000, score: 3.0, tier: "Medium" },
+  { id: "STU-2106", client: "Faisal Abdi", caseType: "Graduate", exposure: 150000, score: 2.8, tier: "Medium" },
+  { id: "STU-2107", client: "Grace Mwangi", caseType: "Undergraduate", exposure: 70000, score: 2.6, tier: "Medium" },
+  { id: "STU-2108", client: "Hassan Yusuf", caseType: "Undergraduate", exposure: 40000, score: 1.9, tier: "Low" },
+  { id: "STU-2109", client: "Irene Achieng", caseType: "Exchange", exposure: 35000, score: 1.6, tier: "Low" },
+  { id: "STU-2110", client: "James Mutua", caseType: "Graduate", exposure: 55000, score: 1.4, tier: "Low" },
+  { id: "STU-2111", client: "Karen Nduta", caseType: "Undergraduate", exposure: 20000, score: 1.1, tier: "Low" },
+  { id: "STU-2112", client: "Leon Mbeki", caseType: "Undergraduate", exposure: 15000, score: 0.9, tier: "Low" }
+];
+
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -97,37 +112,93 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
-function parseCsv(text: string): RiskCase[] {
+function normalizeHeader(s: string) {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function buildAliases(preset: Preset) {
+  return {
+    id: ["id"],
+    client: ["client", normalizeHeader(preset.entityLabel)],
+    casetype: ["casetype", "case_type", normalizeHeader(preset.caseTypeLabel)],
+    exposure: ["exposure", normalizeHeader(preset.exposureLabel), normalizeHeader(preset.exposureShort)],
+    financial: ["financial", normalizeHeader(preset.factorLabels.financial)],
+    behavior: ["behavior", "behaviour", normalizeHeader(preset.factorLabels.behavior)],
+    compliance: ["compliance", normalizeHeader(preset.factorLabels.compliance)],
+    operational: ["operational", normalizeHeader(preset.factorLabels.operational)]
+  };
+}
+
+function findHeaderIndex(headers: string[], aliases: string[]): number {
+  const normalizedHeaders = headers.map(normalizeHeader);
+  for (const alias of aliases) {
+    const idx = normalizedHeaders.indexOf(alias);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+function parseCsv(text: string, preset: Preset): { cases: RiskCase[]; warnings: string[] } {
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
-  if (lines.length < 2) return [];
+  if (lines.length < 2) return { cases: [], warnings: [] };
 
-  const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const rawHeaders = lines[0].split(",").map(h => h.trim());
+  const aliases = buildAliases(preset);
+
+  const idx = {
+    id: findHeaderIndex(rawHeaders, aliases.id),
+    client: findHeaderIndex(rawHeaders, aliases.client),
+    casetype: findHeaderIndex(rawHeaders, aliases.casetype),
+    exposure: findHeaderIndex(rawHeaders, aliases.exposure),
+    financial: findHeaderIndex(rawHeaders, aliases.financial),
+    behavior: findHeaderIndex(rawHeaders, aliases.behavior),
+    compliance: findHeaderIndex(rawHeaders, aliases.compliance),
+    operational: findHeaderIndex(rawHeaders, aliases.operational)
+  };
+
+  const warnings: string[] = [];
+  const factorChecks: { key: "financial" | "behavior" | "compliance" | "operational"; label: string }[] = [
+    { key: "financial", label: preset.factorLabels.financial },
+    { key: "behavior", label: preset.factorLabels.behavior },
+    { key: "compliance", label: preset.factorLabels.compliance },
+    { key: "operational", label: preset.factorLabels.operational }
+  ];
+  factorChecks.forEach(({ key, label }) => {
+    if (idx[key] === -1) {
+      warnings.push(`Couldn't find a column for "${label}" (expected a header named "${key}" or "${label}") — used 0 for every row.`);
+    }
+  });
+  if (idx.exposure === -1) {
+    warnings.push(`Couldn't find an exposure column (expected "exposure" or "${preset.exposureLabel}") — used $0 for every row.`);
+  }
+
   const rows = lines.slice(1);
+  const get = (values: string[], i: number) => (i >= 0 ? values[i] ?? "" : "");
 
-  return rows.map((line, i) => {
+  const cases = rows.map((line, i) => {
     const values = line.split(",").map(v => v.trim());
-    const row: Record<string, string> = {};
-    headers.forEach((h, idx) => (row[h] = values[idx] ?? ""));
 
-    const exposure = Number(row.exposure) || 0;
+    const exposure = Number(get(values, idx.exposure)) || 0;
     const factors = {
-      financial: Number(row.financial) || 0,
-      behavior: Number(row.behavior) || 0,
-      compliance: Number(row.compliance) || 0,
-      operational: Number(row.operational) || 0
+      financial: Number(get(values, idx.financial)) || 0,
+      behavior: Number(get(values, idx.behavior)) || 0,
+      compliance: Number(get(values, idx.compliance)) || 0,
+      operational: Number(get(values, idx.operational)) || 0
     };
     const score = calculateRiskScore(factors, defaultWeights);
     const tier = riskTier(score);
 
     return {
-      id: row.id || `ROW-${i + 1}`,
-      client: row.client || "Unnamed",
-      caseType: row.casetype || row.case_type || "General",
+      id: get(values, idx.id) || `ROW-${i + 1}`,
+      client: get(values, idx.client) || "Unnamed",
+      caseType: get(values, idx.casetype) || "General",
       exposure,
       score,
       tier
     };
   });
+
+  return { cases, warnings };
 }
 
 export default function Home() {
@@ -138,8 +209,7 @@ export default function Home() {
     document.documentElement.setAttribute("data-theme", presetKey);
   }, [presetKey]);
 
-  const [cases, setCases] = useState<RiskCase[]>(sampleCases);
-  const [usingUpload, setUsingUpload] = useState(false);
+  const [uploadedCases, setUploadedCases] = useState<RiskCase[] | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showCsvHelp, setShowCsvHelp] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,20 +219,24 @@ export default function Home() {
   const [sort, setSort] = useState<"score" | "exposure">("score");
   const [showAssessment, setShowAssessment] = useState(false);
 
+  const baseCases = presetKey === "education" ? educationSampleCases : sampleCases;
+  const cases = uploadedCases ?? baseCases;
+  const usingUpload = uploadedCases !== null;
+
   function handleFile(file: File) {
     setUploadError(null);
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const text = String(reader.result || "");
-        const parsed = parseCsv(text);
+        const { cases: parsed, warnings } = parseCsv(text, preset);
         if (!parsed.length) {
           setUploadError("No rows found. Check that your CSV has a header row and at least one data row.");
           return;
         }
-        setCases(parsed);
-        setUsingUpload(true);
+        setUploadedCases(parsed);
         setSelectedTier("All");
+        setUploadError(warnings.length ? warnings.join(" ") : null);
       } catch (e) {
         setUploadError("Couldn't read that file. Make sure it's a plain CSV.");
       }
@@ -172,8 +246,7 @@ export default function Home() {
   }
 
   function resetToSample() {
-    setCases(sampleCases);
-    setUsingUpload(false);
+    setUploadedCases(null);
     setUploadError(null);
     setSelectedTier("All");
   }
@@ -397,7 +470,7 @@ export default function Home() {
                 id,client,caseType,exposure,financial,behavior,compliance,operational
               </p>
               <p style={{ marginBottom: 10 }}>
-                The column names in your file never change. Only what they mean changes with the preset you pick above:
+                Either the technical column name above, or the display name below, works as a header:
               </p>
               <div className="chipRow">
                 {preset.csvFields.map(f => (
@@ -405,7 +478,7 @@ export default function Home() {
                 ))}
               </div>
               <p className="muted" style={{ fontSize: 13, marginTop: 14 }}>
-                <span className="mono">exposure</span> is a dollar amount, currently labeled &ldquo;{preset.exposureLabel}&rdquo;.
+                <span className="mono">exposure</span> is a dollar amount, currently labeled &ldquo;{preset.exposureLabel}&rdquo; — that also works as a header name.
               </p>
             </div>
             <div className="modalActions">
