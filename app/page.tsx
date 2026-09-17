@@ -136,10 +136,19 @@ function buildAliases(preset: Preset) {
 
 function findHeaderIndex(headers: string[], aliases: string[]): number {
   const normalizedHeaders = headers.map(normalizeHeader);
+
   for (const alias of aliases) {
+    if (!alias) continue;
     const idx = normalizedHeaders.indexOf(alias);
     if (idx !== -1) return idx;
   }
+
+  for (const alias of aliases) {
+    if (!alias || alias.length < 4) continue;
+    const idx = normalizedHeaders.findIndex(h => h.includes(alias) || (h.length >= 4 && alias.includes(h)));
+    if (idx !== -1) return idx;
+  }
+
   return -1;
 }
 
