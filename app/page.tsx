@@ -121,7 +121,12 @@ function buildAliases(preset: Preset) {
     id: ["id"],
     client: ["client", normalizeHeader(preset.entityLabel)],
     casetype: ["casetype", "case_type", normalizeHeader(preset.caseTypeLabel)],
-    exposure: ["exposure", normalizeHeader(preset.exposureLabel), normalizeHeader(preset.exposureShort)],
+    exposure: [
+      "exposure",
+      normalizeHeader(preset.exposureLabel),
+      normalizeHeader(preset.exposureLabel.replace(/\(.*?\)/g, "")),
+      normalizeHeader(preset.exposureShort)
+    ],
     financial: ["financial", normalizeHeader(preset.factorLabels.financial)],
     behavior: ["behavior", "behaviour", normalizeHeader(preset.factorLabels.behavior)],
     compliance: ["compliance", normalizeHeader(preset.factorLabels.compliance)],
